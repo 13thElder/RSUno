@@ -22,7 +22,7 @@ app.get('/', (req, res) => {
     console.log('>>> Received "c" parameter:', req.query.c);
   }
   
-  res.status(200).send('OK');
+  res.status(200).send('Lebronto');
 });
 
 // Fallback Route: Catches any invalid URLs so you don't get 404s silently
