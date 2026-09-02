@@ -1,36 +1,35 @@
 const express = require('express');
 const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = './uploads';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${file.originalname}`;
-    cb(null, uniqueName);
-  }
-});
-
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
-});
+// Ensure uploads directory exists
+const uploadDir = './uploads';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('uploads'));
+
+// Parse raw body for file uploads
+app.use((req, res, next) => {
+  if (req.headers['content-type']?.includes('multipart/form-data')) {
+    let data = Buffer.alloc(0);
+    req.on('data', chunk => data = Buffer.concat([data, chunk]));
+    req.on('end', () => {
+      req.rawBody = data;
+      next();
+    });
+  } else {
+    next();
+  }
+});
 
 // Logger
 app.use((req, res, next) => {
@@ -38,57 +37,36 @@ app.use((req, res, next) => {
   next();
 });
 
-// Upload single file
-app.post('/upload', upload.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+// Simple file upload without multer
+app.post('/upload', (req, res) => {
+  if (!req.rawBody) {
+    return res.status(400).json({ error: 'No file data' });
   }
   
-  const fileUrl = `${req.protocol}://${req.get('host')}/download/${req.file.filename}`;
+  // Extract filename from Content-Disposition header
+  const contentDisp = req.headers['content-disposition'] || '';
+  const filenameMatch = contentDisp.match(/filename="(.+)"/);
+  const originalName = filenameMatch ? filenameMatch[1] : `file-${Date.now()}`;
+  const filename = `${Date.now()}-${originalName}`;
+  const filepath = path.join(uploadDir, filename);
+  
+  fs.writeFileSync(filepath, req.rawBody);
   
   res.json({
     success: true,
     file: {
-      originalName: req.file.originalname,
-      filename: req.file.filename,
-      size: req.file.size,
-      url: fileUrl,
-      uploadedAt: new Date().toISOString()
+      originalName: originalName,
+      filename: filename,
+      size: req.rawBody.length,
+      url: `${req.protocol}://${req.get('host')}/${filename}`
     }
   });
 });
 
-// Upload multiple files
-app.post('/upload-multiple', upload.array('files', 10), (req, res) => {
-  if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: 'No files uploaded' });
-  }
-  
-  const files = req.files.map(file => ({
-    originalName: file.originalname,
-    filename: file.filename,
-    size: file.size,
-    url: `${req.protocol}://${req.get('host')}/download/${file.filename}`
-  }));
-  
-  res.json({
-    success: true,
-    files: files
-  });
-});
-
-// List all files
+// List files
 app.get('/files', (req, res) => {
-  const uploadDir = './uploads';
-  
-  if (!fs.existsSync(uploadDir)) {
-    return res.json({ files: [], count: 0 });
-  }
-  
   fs.readdir(uploadDir, (err, files) => {
-    if (err) {
-      return res.status(500).json({ error: 'Unable to read files' });
-    }
+    if (err) return res.status(500).json({ error: 'Unable to read files' });
     
     const fileList = files.map(filename => {
       const stats = fs.statSync(path.join(uploadDir, filename));
@@ -97,147 +75,100 @@ app.get('/files', (req, res) => {
         originalName: filename.substring(filename.indexOf('-') + 1),
         size: stats.size,
         uploadedAt: stats.birthtime,
-        url: `${req.protocol}://${req.get('host')}/download/${filename}`
+        url: `${req.protocol}://${req.get('host')}/${filename}`
       };
     });
     
-    res.json({
-      count: fileList.length,
-      files: fileList.sort((a, b) => b.uploadedAt - a.uploadedAt)
-    });
+    res.json({ count: fileList.length, files: fileList });
   });
 });
 
 // Download file
 app.get('/download/:filename', (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, 'uploads', filename);
+  const filepath = path.join(__dirname, 'uploads', filename);
   
-  // Security: prevent directory traversal
-  if (!filePath.startsWith(path.join(__dirname, 'uploads'))) {
+  if (!filepath.startsWith(path.join(__dirname, 'uploads'))) {
     return res.status(403).json({ error: 'Access denied' });
   }
   
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(filepath)) {
     return res.status(404).json({ error: 'File not found' });
   }
   
-  res.download(filePath, filename.substring(filename.indexOf('-') + 1));
+  res.sendFile(filepath);
 });
 
 // Delete file
 app.delete('/delete/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(__dirname, 'uploads', filename);
+  const filepath = path.join(__dirname, 'uploads', req.params.filename);
   
-  if (!filePath.startsWith(path.join(__dirname, 'uploads'))) {
+  if (!filepath.startsWith(path.join(__dirname, 'uploads'))) {
     return res.status(403).json({ error: 'Access denied' });
   }
   
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(filepath)) {
     return res.status(404).json({ error: 'File not found' });
   }
   
-  fs.unlinkSync(filePath);
-  res.json({ success: true, message: 'File deleted' });
+  fs.unlinkSync(filepath);
+  res.json({ success: true });
 });
 
-// Web interface
+// Simple web interface
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>📁 File Host</title>
+      <title>File Host</title>
       <style>
-        body { font-family: sans-serif; background: #0f1419; color: #e6edf3; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        h1 { color: #58a6ff; }
-        .upload-area {
-          border: 2px dashed #30363d;
-          border-radius: 12px;
-          padding: 40px;
-          text-align: center;
-          background: #161b22;
-          margin: 20px 0;
-        }
-        .btn {
-          background: #238636;
-          color: white;
-          border: none;
-          padding: 12px 24px;
-          border-radius: 6px;
-          cursor: pointer;
-        }
-        .btn:hover { background: #2ea043; }
+        body { font-family: sans-serif; background: #1a1a2e; color: #eee; padding: 20px; max-width: 800px; margin: 0 auto; }
+        h1 { color: #00d9ff; }
+        .upload-box { border: 2px dashed #444; padding: 40px; text-align: center; border-radius: 10px; margin: 20px 0; }
+        button { background: #00d9ff; color: #000; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #33e5ff; }
         input[type="file"] { display: none; }
-        .file-list { margin-top: 20px; }
-        .file-item {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px;
-          background: #161b22;
-          border: 1px solid #30363d;
-          border-radius: 8px;
-          margin-bottom: 8px;
-        }
-        .file-info { flex: 1; }
-        .file-btn {
-          background: #21262d;
-          border: 1px solid #30363d;
-          color: #e6edf3;
-          padding: 6px 12px;
-          border-radius: 6px;
-          cursor: pointer;
-          text-decoration: none;
-        }
+        .file { background: #16213e; padding: 15px; margin: 10px 0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .file a { color: #00d9ff; text-decoration: none; }
+        .delete { background: #ff4444; color: white; padding: 6px 12px; font-size: 12px; }
       </style>
     </head>
     <body>
-      <div class="container">
-        <h1>📁 File Host</h1>
-        <div class="upload-area">
-          <p>Click to upload files</p>
-          <input type="file" id="fileInput" multiple>
-          <button class="btn" onclick="document.getElementById('fileInput').click()">Choose Files</button>
-        </div>
-        <div id="fileList"></div>
+      <h1>📁 File Host</h1>
+      <div class="upload-box">
+        <p>Select files to upload</p>
+        <input type="file" id="fileInput" multiple>
+        <button onclick="document.getElementById('fileInput').click()">Choose Files</button>
       </div>
+      <div id="files"></div>
+      
       <script>
         document.getElementById('fileInput').addEventListener('change', async (e) => {
-          const files = e.target.files;
-          if (!files.length) return;
-          
-          const formData = new FormData();
-          for (let file of files) {
-            formData.append('files', file);
+          for (let file of e.target.files) {
+            const formData = new FormData();
+            formData.append('file', file);
+            await fetch('/upload', { method: 'POST', body: formData });
           }
-          
-          await fetch('/upload-multiple', { method: 'POST', body: formData });
           loadFiles();
         });
         
         async function loadFiles() {
           const res = await fetch('/files');
           const data = await res.json();
-          const list = document.getElementById('fileList');
-          
-          if (data.files.length === 0) {
-            list.innerHTML = '<p>No files uploaded</p>';
-            return;
-          }
-          
-          list.innerHTML = '<h2>Uploaded Files:</h2>' + data.files.map(f => 
-            '<div class="file-item">' +
-              '<div class="file-info">' + f.originalName + '</div>' +
-              '<a class="file-btn" href="/download/' + f.filename + '">Download</a>' +
-              '<button class="file-btn" onclick="deleteFile(\\'' + f.filename + '\\')">Delete</button>' +
+          const div = document.getElementById('files');
+          div.innerHTML = '<h2>Files:</h2>' + data.files.map(f => 
+            '<div class="file">' +
+              '<span>' + f.originalName + '</span>' +
+              '<div>' +
+                '<a href="/' + f.filename + '">Download</a> ' +
+                '<button class="delete" onclick="del(\\'' + f.filename + '\\')">Delete</button>' +
+              '</div>' +
             '</div>'
           ).join('');
         }
         
-        async function deleteFile(filename) {
+        async function del(filename) {
           await fetch('/delete/' + filename, { method: 'DELETE' });
           loadFiles();
         }
