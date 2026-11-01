@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Island – Countdown</title>
+<title> The Island </title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap">
 <style>
 :root{--bg:#0a1a63;--ink:#eaf0ff;--panel:#04060c;--accent:#3d6bff;--muted:#8c9acb;--line:#2a3a8f;
@@ -30,13 +30,13 @@ h1{font-size:clamp(1.8rem,6vw,3.2rem);line-height:1;letter-spacing:-.04em;font-w
 </head>
 <body>
 <header>
-  <div class="logo" aria-label="Island">
+  <div class="logo" aria-label="Miramar">
     <svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="14" fill="#04060c"/><path d="M9 33c4-6 9-8 15-8s11 2 15 8z" fill="#3d6bff"/><path d="M24 26c0-5 1-9 3-12M27 14c-3-4-7-4-10-2 3 0 6 1 8 3M27 14c3-4 7-4 10-2-3 0-6 1-8 3M9 39q4-3 8 0t8 0 8 0 6 0" fill="none" stroke="#eaf0ff" stroke-width="2" stroke-linecap="round"/></svg>
-    Island
+    Miramar Maddness 
   </div>
 </header>
 <main id="app">
-  <h1 id="title">Island opens in</h1>
+  <h1 id="title"></h1>
   <div class="clock" role="timer" aria-label="Time until Island opens">
     <div class="unit"><span class="num" id="d">00</span><span class="name">days</span></div>
     <div class="unit"><span class="num" id="h">00</span><span class="name">hours</span></div>
@@ -63,7 +63,7 @@ function tick(){
   $('s').textContent=pad(t%60);
   const over=t===0;
   document.body.classList.toggle('done',over);
-  $('title').textContent=over?'Island is open.':'Island opens in';
+  $('title').textContent=over?'Island is open.':'';
 }
 label();tick();setInterval(tick,1000);
 </script>
